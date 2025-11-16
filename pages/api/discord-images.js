@@ -10,40 +10,35 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing messageUrl" });
     }
 
-    // Extract channel + message IDs from Discord URL
-    const match = messageUrl.match(/channels\/\d+\/(\d+)\/(\d+)/);
+    const match = messageUrl.match(/channels\/(\d+)\/(\d+)\/(\d+)/);
     if (!match) {
-      return res.status(400).json({ error: "Invalid Discord message link" });
+      return res.status(400).json({ error: "Invalid Discord message URL" });
     }
 
-    const channelId = match[1];
-    const messageId = match[2];
+    const [, guildId, channelId, messageId] = match;
+    const token = process.env.BOT_TOKEN;
 
-    // Fetch from Discord using bot token (server side, safe)
-    const discordResponse = await fetch(
+    if (!token) {
+      return res.status(500).json({ error: "Missing BOT_TOKEN on server." });
+    }
+
+    const response = await fetch(
       `https://discord.com/api/v10/channels/${channelId}/messages/${messageId}`,
       {
-        headers: {
-          Authorization: `Bot ${process.env.BOT_TOKEN}`
-        }
+        headers: { Authorization: `Bot ${token}` },
       }
     );
 
-    if (!discordResponse.ok) {
-      return res.status(500).json({ error: "Discord API error" });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      return res.status(response.status).json({ error: err.message || "Discord API error" });
     }
 
-    const data = await discordResponse.json();
+    const messageData = await response.json();
+    res.status(200).json({ attachments: messageData.attachments || [] });
 
-    // Extract attachments (images)
-    const imageUrls = data.attachments
-      .filter(a => a.content_type?.startsWith("image"))
-      .map(a => a.url);
-
-    return res.status(200).json({ images: imageUrls });
-
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "Server error" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Server error" });
   }
 }
